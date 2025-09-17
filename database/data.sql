@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS bikes (
     color VARCHAR(50),
     location VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    sold_at TIMESTAMP NULL DEFAULT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (buyer_id) REFERENCES users(id)
 );

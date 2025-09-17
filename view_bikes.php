@@ -3,8 +3,17 @@ session_start();
 include 'db connect.php';
 
 // Handle advanced filters
-$where = ["b.status = 'available'"];
+$where = [];
 $params = [];
+
+// Status filter - Default to available, but allow filtering
+if (!empty($_GET['status'])) {
+    $status = $conn->real_escape_string($_GET['status']);
+    $where[] = "b.status = '$status'";
+} else {
+    // Default to available bikes if no status filter is specified
+    $where[] = "b.status = 'available'";
+}
 
 // Basic search
 if (!empty($_GET['search'])) {
@@ -645,65 +654,104 @@ $result = $conn->query($sql);
   <div class="container">
     <div class="page-header">
       <h1 class="page-title">Available Bikes</h1>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button type="button" id="toggleFiltersBtn" class="btn btn-outline">
+          <i class="fas fa-sliders-h"></i> <span id="toggleFiltersText">Hide Filters</span>
+        </button>
       <?php if (isset($_SESSION['user_id'])): ?>
         <a href="cart_view.php" class="btn btn-primary">
           <i class="fas fa-shopping-cart"></i>
           View Cart
         </a>
       <?php endif; ?>
+      </div>
     </div>
 
     <!-- Advanced Filter Form -->
     <div class="filter-container">
       <form method="GET" class="filter-form">
-        <div class="filter-row">
-          <input type="text" name="search" placeholder="Search bikes..." value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
-          <input type="text" name="brand" placeholder="Brand/Model" value="<?= htmlspecialchars($_GET['brand'] ?? '') ?>">
-          <input type="text" name="location" placeholder="Location" value="<?= htmlspecialchars($_GET['location'] ?? '') ?>">
+        <div class="filter-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end;">
+          <div class="filter-field" style="display:flex;flex-direction:column;">
+            <label style="font-size:12px;color:#6b7280;margin-bottom:6px;">Search</label>
+            <input type="text" name="search" placeholder="Search bikes..." value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
+          </div>
+          <div class="filter-field" style="display:flex;flex-direction:column;">
+            <label style="font-size:12px;color:#6b7280;margin-bottom:6px;">Brand/Model</label>
+            <input type="text" name="brand" placeholder="e.g., Honda, Activa" value="<?= htmlspecialchars($_GET['brand'] ?? '') ?>">
+          </div>
+          <div class="filter-field" style="display:flex;flex-direction:column;">
+            <label style="font-size:12px;color:#6b7280;margin-bottom:6px;">Location</label>
+            <input type="text" name="location" placeholder="City/Area" value="<?= htmlspecialchars($_GET['location'] ?? '') ?>">
+          </div>
         </div>
         
-        <div class="filter-row">
-          <div class="price-range">
-            <input type="number" name="min_price" placeholder="Min Price" min="0" value="<?= htmlspecialchars($_GET['min_price'] ?? '') ?>">
-            <span>-</span>
-            <input type="number" name="max_price" placeholder="Max Price" min="0" value="<?= htmlspecialchars($_GET['max_price'] ?? '') ?>">
+        <div class="filter-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end;">
+          <div class="filter-field" style="display:flex;flex-direction:column;">
+            <label style="font-size:12px;color:#6b7280;margin-bottom:6px;">Price Range (₹)</label>
+            <div class="price-range" style="display:flex;gap:8px;">
+              <input type="number" name="min_price" placeholder="Min" min="0" value="<?= htmlspecialchars($_GET['min_price'] ?? '') ?>">
+              <input type="number" name="max_price" placeholder="Max" min="0" value="<?= htmlspecialchars($_GET['max_price'] ?? '') ?>">
+            </div>
           </div>
           
-          <div class="year-range">
-            <input type="number" name="min_year" placeholder="Min Year" min="1900" max="2024" value="<?= htmlspecialchars($_GET['min_year'] ?? '') ?>">
-            <span>-</span>
-            <input type="number" name="max_year" placeholder="Max Year" min="1900" max="2024" value="<?= htmlspecialchars($_GET['max_year'] ?? '') ?>">
+          <div class="filter-field" style="display:flex;flex-direction:column;">
+            <label style="font-size:12px;color:#6b7280;margin-bottom:6px;">Year Range</label>
+            <div class="year-range" style="display:flex;gap:8px;">
+              <input type="number" name="min_year" placeholder="From" min="1900" max="2024" value="<?= htmlspecialchars($_GET['min_year'] ?? '') ?>">
+              <input type="number" name="max_year" placeholder="To" min="1900" max="2024" value="<?= htmlspecialchars($_GET['max_year'] ?? '') ?>">
+            </div>
           </div>
           
-          <input type="number" name="max_mileage" placeholder="Max Mileage" min="0" value="<?= htmlspecialchars($_GET['max_mileage'] ?? '') ?>">
+          <div class="filter-field" style="display:flex;flex-direction:column;">
+            <label style="font-size:12px;color:#6b7280;margin-bottom:6px;">Max Mileage (km)</label>
+            <input type="number" name="max_mileage" placeholder="e.g., 30000" min="0" value="<?= htmlspecialchars($_GET['max_mileage'] ?? '') ?>">
+          </div>
         </div>
         
-        <div class="filter-row">
-          <select name="fuel_type">
-            <option value="">Fuel Type</option>
-            <option value="Petrol" <?= (($_GET['fuel_type'] ?? '') == 'Petrol') ? 'selected' : '' ?>>Petrol</option>
-            <option value="Diesel" <?= (($_GET['fuel_type'] ?? '') == 'Diesel') ? 'selected' : '' ?>>Diesel</option>
-            <option value="Electric" <?= (($_GET['fuel_type'] ?? '') == 'Electric') ? 'selected' : '' ?>>Electric</option>
-            <option value="Hybrid" <?= (($_GET['fuel_type'] ?? '') == 'Hybrid') ? 'selected' : '' ?>>Hybrid</option>
-          </select>
+        <div class="filter-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end;">
+          <div class="filter-field" style="display:flex;flex-direction:column;">
+            <label style="font-size:12px;color:#6b7280;margin-bottom:6px;">Status</label>
+            <select name="status">
+              <option value="available" <?= (($_GET['status'] ?? 'available') == 'available') ? 'selected' : '' ?>>Available</option>
+              <option value="sold" <?= (($_GET['status'] ?? '') == 'sold') ? 'selected' : '' ?>>Sold</option>
+              <option value="" <?= (($_GET['status'] ?? '') == '') ? 'selected' : '' ?>>All Status</option>
+            </select>
+          </div>
           
-          <select name="transmission">
-            <option value="">Transmission</option>
-            <option value="Manual" <?= (($_GET['transmission'] ?? '') == 'Manual') ? 'selected' : '' ?>>Manual</option>
-            <option value="Automatic" <?= (($_GET['transmission'] ?? '') == 'Automatic') ? 'selected' : '' ?>>Automatic</option>
-          </select>
+          <div class="filter-field" style="display:flex;flex-direction:column;">
+            <label style="font-size:12px;color:#6b7280;margin-bottom:6px;">Fuel Type</label>
+            <select name="fuel_type">
+              <option value="">Any</option>
+              <option value="Petrol" <?= (($_GET['fuel_type'] ?? '') == 'Petrol') ? 'selected' : '' ?>>Petrol</option>
+              <option value="Diesel" <?= (($_GET['fuel_type'] ?? '') == 'Diesel') ? 'selected' : '' ?>>Diesel</option>
+              <option value="Electric" <?= (($_GET['fuel_type'] ?? '') == 'Electric') ? 'selected' : '' ?>>Electric</option>
+              <option value="Hybrid" <?= (($_GET['fuel_type'] ?? '') == 'Hybrid') ? 'selected' : '' ?>>Hybrid</option>
+            </select>
+          </div>
           
-          <select name="sort">
-            <option value="">Sort By</option>
-            <option value="newest" <?= (($_GET['sort'] ?? '') == 'newest') ? 'selected' : '' ?>>Newest First</option>
-            <option value="oldest" <?= (($_GET['sort'] ?? '') == 'oldest') ? 'selected' : '' ?>>Oldest First</option>
-            <option value="price_asc" <?= (($_GET['sort'] ?? '') == 'price_asc') ? 'selected' : '' ?>>Price: Low to High</option>
-            <option value="price_desc" <?= (($_GET['sort'] ?? '') == 'price_desc') ? 'selected' : '' ?>>Price: High to Low</option>
-            <option value="mileage_low" <?= (($_GET['sort'] ?? '') == 'mileage_low') ? 'selected' : '' ?>>Lowest Mileage</option>
-            <option value="mileage_high" <?= (($_GET['sort'] ?? '') == 'mileage_high') ? 'selected' : '' ?>>Highest Mileage</option>
-            <option value="year_new" <?= (($_GET['sort'] ?? '') == 'year_new') ? 'selected' : '' ?>>Newest Year</option>
-            <option value="year_old" <?= (($_GET['sort'] ?? '') == 'year_old') ? 'selected' : '' ?>>Oldest Year</option>
-          </select>
+          <div class="filter-field" style="display:flex;flex-direction:column;">
+            <label style="font-size:12px;color:#6b7280;margin-bottom:6px;">Transmission</label>
+            <select name="transmission">
+              <option value="">Any</option>
+              <option value="Manual" <?= (($_GET['transmission'] ?? '') == 'Manual') ? 'selected' : '' ?>>Manual</option>
+              <option value="Automatic" <?= (($_GET['transmission'] ?? '') == 'Automatic') ? 'selected' : '' ?>>Automatic</option>
+            </select>
+          </div>
+          
+          <div class="filter-field" style="display:flex;flex-direction:column;">
+            <label style="font-size:12px;color:#6b7280;margin-bottom:6px;">Sort By</label>
+            <select name="sort">
+              <option value="">Relevance</option>
+              <option value="newest" <?= (($_GET['sort'] ?? '') == 'newest') ? 'selected' : '' ?>>Newest First</option>
+              <option value="oldest" <?= (($_GET['sort'] ?? '') == 'oldest') ? 'selected' : '' ?>>Oldest First</option>
+              <option value="price_asc" <?= (($_GET['sort'] ?? '') == 'price_asc') ? 'selected' : '' ?>>Price: Low to High</option>
+              <option value="price_desc" <?= (($_GET['sort'] ?? '') == 'price_desc') ? 'selected' : '' ?>>Price: High to Low</option>
+              <option value="mileage_low" <?= (($_GET['sort'] ?? '') == 'mileage_low') ? 'selected' : '' ?>>Lowest Mileage</option>
+              <option value="mileage_high" <?= (($_GET['sort'] ?? '') == 'mileage_high') ? 'selected' : '' ?>>Highest Mileage</option>
+              <option value="year_new" <?= (($_GET['sort'] ?? '') == 'year_new') ? 'selected' : '' ?>>Newest Year</option>
+              <option value="year_old" <?= (($_GET['sort'] ?? '') == 'year_old') ? 'selected' : '' ?>>Oldest Year</option>
+            </select>
+          </div>
         </div>
         
         <div class="filter-actions">
@@ -751,6 +799,15 @@ $result = $conn->query($sql);
                 <span>₹<?php echo number_format($bike['price']); ?></span>
               </div>
               
+              <!-- Add status display -->
+              <div style="margin-bottom: 1rem;">
+                <?php if ($bike['status'] == 'sold'): ?>
+                  <span style="background: #ef4444; color: white; padding: 0.25rem 0.75rem; border-radius: 50px; font-size: 0.75rem; font-weight: 500;">SOLD</span>
+                <?php else: ?>
+                  <span style="background: #10b981; color: white; padding: 0.25rem 0.75rem; border-radius: 50px; font-size: 0.75rem; font-weight: 500;">AVAILABLE</span>
+                <?php endif; ?>
+              </div>
+              
               <?php if (!empty($bike['year']) || !empty($bike['mileage']) || !empty($bike['fuel_type'])): ?>
                 <div class="bike-specs">
                   <?php if (!empty($bike['year'])): ?>
@@ -772,6 +829,11 @@ $result = $conn->query($sql);
 
               <?php if (isset($_SESSION['user_id'])): ?>
                 <div class="bike-actions">
+<?php if ((int)$bike['user_id'] === (int)$_SESSION['user_id']): ?>
+                  <div style="background:#fffbe6;border:1px solid #ffe58f;color:#ad6800;padding:8px 10px;border-radius:6px;">This is your listing.</div>
+<?php elseif ($bike['status'] == 'sold'): ?>
+                  <div style="background:#fee2e2;border:1px solid #fecaca;color:#dc2626;padding:8px 10px;border-radius:6px;">This bike has been sold.</div>
+<?php else: ?>
                   <!-- Buy Now -->
                   <form method="GET" action="buy_bike.php">
                     <input type="hidden" name="id" value="<?php echo $bike['id']; ?>">
@@ -797,6 +859,7 @@ $result = $conn->query($sql);
                   <a href="generate_invoice.php?type=quote&bike_id=<?php echo $bike['id']; ?>" class="btn btn-outline">
                     <i class="fas fa-receipt"></i> Get Quote
                   </a>
+<?php endif; ?>
                 </div>
               <?php else: ?>
                 <div class="login-message">
@@ -916,6 +979,34 @@ $result = $conn->query($sql);
         }, 300);
       }, 3000);
     }
+
+    // Filter container toggle
+    document.addEventListener('DOMContentLoaded', function() {
+      const filterContainer = document.querySelector('.filter-container');
+      const toggleFiltersBtn = document.getElementById('toggleFiltersBtn');
+      const toggleFiltersText = document.getElementById('toggleFiltersText');
+
+      if (filterContainer) {
+        // Prepare for height animation
+        filterContainer.style.overflow = 'hidden';
+        filterContainer.style.transition = 'max-height 0.3s ease';
+        filterContainer.style.maxHeight = filterContainer.scrollHeight + 'px';
+      }
+
+      if (filterContainer && toggleFiltersBtn && toggleFiltersText) {
+        let isExpanded = true;
+        toggleFiltersBtn.addEventListener('click', function() {
+          if (isExpanded) {
+            filterContainer.style.maxHeight = '0';
+            toggleFiltersText.textContent = 'Show Filters';
+          } else {
+            filterContainer.style.maxHeight = filterContainer.scrollHeight + 'px';
+            toggleFiltersText.textContent = 'Hide Filters';
+          }
+          isExpanded = !isExpanded;
+        });
+      }
+    });
   </script>
 </body>
 </html>

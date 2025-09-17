@@ -10,15 +10,107 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $user = $conn->query("SELECT * FROM users WHERE id = $user_id")->fetch_assoc();
 
+// Detect if profile_image column exists; create it if missing
+$hasProfileImageColumn = false;
+if ($result = $conn->query("SHOW COLUMNS FROM users LIKE 'profile_image'")) {
+    $hasProfileImageColumn = ($result->num_rows > 0);
+}
+if (!$hasProfileImageColumn) {
+    @$conn->query("ALTER TABLE users ADD COLUMN profile_image VARCHAR(255) NULL");
+    if ($result = $conn->query("SHOW COLUMNS FROM users LIKE 'profile_image'")) {
+        $hasProfileImageColumn = ($result->num_rows > 0);
+    }
+}
+
+$errorMessage = '';
+
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $username = trim($_POST['username']);
     $email = trim($_POST['email']);
     $phone = trim($_POST['phone']);
     $address = trim($_POST['address']);
 
-    if ($username && $email && $phone && $address) {
+    $currentProfileImage = $user['profile_image'] ?? null;
+    $removeRequested = !empty($_POST['remove_profile_image']);
+    $uploadedProfileImagePath = null;
+
+    // Handle image upload (replacement)
+    if (isset($_FILES['profile_image']) && isset($_FILES['profile_image']['tmp_name']) && is_uploaded_file($_FILES['profile_image']['tmp_name']) && $_FILES['profile_image']['error'] === UPLOAD_ERR_OK) {
+        $tmpPath = $_FILES['profile_image']['tmp_name'];
+        $originalName = $_FILES['profile_image']['name'];
+        $fileSize = (int) $_FILES['profile_image']['size'];
+
+        if ($fileSize <= 0) {
+            $errorMessage = 'Uploaded file is empty.';
+        } elseif ($fileSize > 2 * 1024 * 1024) {
+            $errorMessage = 'File too large. Max 2MB allowed.';
+        } else {
+            $mimeType = null;
+            if (class_exists('finfo')) {
+                $finfo = new finfo(FILEINFO_MIME_TYPE);
+                $mimeType = @$finfo->file($tmpPath);
+            }
+            if (!$mimeType && function_exists('mime_content_type')) {
+                $mimeType = @mime_content_type($tmpPath);
+            }
+            // Fallback: guess by extension
+            if (!$mimeType) {
+                $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+                if (in_array($ext, ['jpg','jpeg'])) { $mimeType = 'image/jpeg'; }
+                elseif ($ext === 'png') { $mimeType = 'image/png'; }
+                elseif ($ext === 'webp') { $mimeType = 'image/webp'; }
+            }
+
+            $allowed = [
+                'image/jpeg' => 'jpg',
+                'image/png' => 'png',
+                'image/webp' => 'webp'
+            ];
+
+            if (!$mimeType || !isset($allowed[$mimeType])) {
+                $errorMessage = 'Invalid image type. Allowed: JPG, PNG, WEBP.';
+            } else {
+                if (!is_dir('uploads')) {
+                    @mkdir('uploads', 0755, true);
+                }
+                if (!is_writable('uploads')) {
+                    $errorMessage = 'Upload directory is not writable.';
+                } else {
+                    $extension = $allowed[$mimeType];
+                    $safeBase = 'profile_' . $user_id . '_' . time();
+                    $targetRelPath = 'uploads/' . $safeBase . '.' . $extension;
+                    if (move_uploaded_file($tmpPath, $targetRelPath)) {
+                        $uploadedProfileImagePath = $targetRelPath;
+                        // Remove old image if exists
+                        if (!empty($currentProfileImage) && is_file($currentProfileImage)) {
+                            @unlink($currentProfileImage);
+                        }
+                        // If upload succeeds, do not process remove checkbox
+                        $removeRequested = false;
+                    } else {
+                        $errorMessage = 'Failed to move uploaded file.';
+                    }
+                }
+            }
+        }
+    }
+
+    // If remove requested and no new upload, delete existing image
+    if ($removeRequested && !$uploadedProfileImagePath && !empty($currentProfileImage) && is_file($currentProfileImage)) {
+        @unlink($currentProfileImage);
+    }
+
+    if ($username && $email && $phone && $address && !$errorMessage) {
+        if ($uploadedProfileImagePath && $hasProfileImageColumn) {
+            $stmt = $conn->prepare("UPDATE users SET username=?, email=?, phone=?, address=?, profile_image=? WHERE id=?");
+            $stmt->bind_param("sssssi", $username, $email, $phone, $address, $uploadedProfileImagePath, $user_id);
+        } elseif ($removeRequested && $hasProfileImageColumn) {
+            $stmt = $conn->prepare("UPDATE users SET username=?, email=?, phone=?, address=?, profile_image=NULL WHERE id=?");
+            $stmt->bind_param("ssssi", $username, $email, $phone, $address, $user_id);
+        } else {
         $stmt = $conn->prepare("UPDATE users SET username=?, email=?, phone=?, address=? WHERE id=?");
         $stmt->bind_param("ssssi", $username, $email, $phone, $address, $user_id);
+        }
         $stmt->execute();
         $stmt->close();
         header("Location: profile.php?success=1");
@@ -26,7 +118,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -55,6 +146,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         }
         button[type="submit"]:hover { background-color: #4fa3c7; color: #fff; }
         .success { text-align: center; color: #27ae60; font-weight: bold; margin-bottom: 14px; }
+        .error { text-align: center; color: #e57373; font-weight: bold; margin-bottom: 14px; }
         .logout-btn {
             display: block; width: 100%; margin-top: 18px; padding: 11px; background: #f44336; color: #fff; border: none;
             border-radius: 6px; font-size: 16px; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none;
@@ -197,7 +289,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 <body>
     <div class="profile-container">
         <div class="avatar">
+<?php if (!empty($user['profile_image'])): ?>
+            <img src="<?= htmlspecialchars($user['profile_image']) ?>" alt="Profile" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
+<?php else: ?>
             <i class="fa-solid fa-user"></i>
+<?php endif; ?>
         </div>
         <div class="profile-info">
             <h3><?= htmlspecialchars($user['username']) ?></h3>
@@ -208,11 +304,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 <div class="admin-badge"><i class="fa-solid fa-crown"></i> Admin</div>
             <?php endif; ?>
         </div>
+        <?php if (!empty($errorMessage)): ?>
+            <div class="error"><?= htmlspecialchars($errorMessage) ?></div>
+        <?php endif; ?>
         <?php if (isset($_GET['success'])): ?>
             <div class="success">Profile updated successfully!</div>
         <?php endif; ?>
         <div class="form-section">
-            <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
                 <label for="username">Username</label>
                 <input type="text" name="username" value="<?= htmlspecialchars($user['username']) ?>" required>
 
@@ -224,6 +323,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                 <label for="address">Address</label>
                 <input type="text" name="address" value="<?= htmlspecialchars($user['address'] ?? '') ?>" required>
+
+<?php if (!empty($user['profile_image'])): ?>
+                <div style="margin: 10px 0 18px;">
+                    <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="checkbox" name="remove_profile_image" value="1">
+                        <span>Remove current profile image</span>
+                    </label>
+                </div>
+<?php endif; ?>
+                <label for="profile_image">Change/Upload Profile Image</label>
+                <input type="file" name="profile_image" accept="image/jpeg,image/png,image/webp">
+                <small style="display:block;color:#b0b8c1;margin:6px 0 18px;">Max 2MB. Allowed: JPG, PNG, WEBP.</small>
 
                 <button type="submit">Update Profile</button>
             </form>

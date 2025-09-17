@@ -23,23 +23,29 @@ try {
     // Get bike statistics by fuel type
     $fuel_stats = $conn->query("SELECT fuel_type, COUNT(*) as count FROM bikes WHERE fuel_type IS NOT NULL GROUP BY fuel_type");
 
-    // Get monthly sales data (last 6 months)
+    // Get monthly sales data (last 6 months) - use sold_at if available
     $monthly_sales = $conn->query("
-        SELECT DATE_FORMAT(created_at, '%Y-%m') as month, COUNT(*) as count 
+        SELECT DATE_FORMAT(COALESCE(sold_at, created_at), '%Y-%m') as month, COUNT(*) as count 
         FROM bikes 
         WHERE status = 'sold' 
-        AND created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+        AND COALESCE(sold_at, created_at) >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
         GROUP BY month 
         ORDER BY month DESC
     ");
 
     // Calculate total revenue
     $total_revenue = $conn->query("SELECT SUM(price) as total FROM bikes WHERE status = 'sold'")->fetch_assoc()['total'] ?? 0;
+
+    // Sales summaries
+    $daily_sales = $conn->query("SELECT COUNT(*) AS count, COALESCE(SUM(price),0) AS revenue FROM bikes WHERE status='sold' AND DATE(COALESCE(sold_at, created_at)) = CURDATE()")->fetch_assoc();
+    $weekly_sales = $conn->query("SELECT COUNT(*) AS count, COALESCE(SUM(price),0) AS revenue FROM bikes WHERE status='sold' AND YEARWEEK(COALESCE(sold_at, created_at), 1) = YEARWEEK(CURDATE(), 1)")->fetch_assoc();
+    $monthly_sales_summary = $conn->query("SELECT COUNT(*) AS count, COALESCE(SUM(price),0) AS revenue FROM bikes WHERE status='sold' AND DATE_FORMAT(COALESCE(sold_at, created_at), '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')")->fetch_assoc();
 } catch (Exception $e) {
     // Handle database errors gracefully
     $user_count = $bike_count = $sold_count = $available_count = $message_count = $wishlist_count = 0;
     $total_revenue = 0;
     $recent_bikes = $recent_users = $fuel_stats = $monthly_sales = null;
+    $daily_sales = $weekly_sales = $monthly_sales_summary = ['count' => 0, 'revenue' => 0];
 }
 ?>
 
@@ -504,6 +510,49 @@ try {
           <?php else: ?>
             <p class="no-data">No sales data available</p>
           <?php endif; ?>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sales Summary Section -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; margin-bottom: 3rem;">
+      <div class="analytics-card">
+        <h3 class="analytics-title"><i class="fas fa-sun"></i> Today's Sales</h3>
+        <div>
+          <div class="fuel-item">
+            <span class="fuel-type">Orders</span>
+            <span class="fuel-count"><?= (int)($daily_sales['count'] ?? 0) ?></span>
+          </div>
+          <div class="fuel-item">
+            <span class="fuel-type">Revenue</span>
+            <span class="fuel-count">₹<?= number_format((float)($daily_sales['revenue'] ?? 0)) ?></span>
+          </div>
+        </div>
+      </div>
+      <div class="analytics-card">
+        <h3 class="analytics-title"><i class="fas fa-calendar-week"></i> This Week</h3>
+        <div>
+          <div class="fuel-item">
+            <span class="fuel-type">Orders</span>
+            <span class="fuel-count"><?= (int)($weekly_sales['count'] ?? 0) ?></span>
+          </div>
+          <div class="fuel-item">
+            <span class="fuel-type">Revenue</span>
+            <span class="fuel-count">₹<?= number_format((float)($weekly_sales['revenue'] ?? 0)) ?></span>
+          </div>
+        </div>
+      </div>
+      <div class="analytics-card">
+        <h3 class="analytics-title"><i class="fas fa-calendar"></i> This Month</h3>
+        <div>
+          <div class="fuel-item">
+            <span class="fuel-type">Orders</span>
+            <span class="fuel-count"><?= (int)($monthly_sales_summary['count'] ?? 0) ?></span>
+          </div>
+          <div class="fuel-item">
+            <span class="fuel-type">Revenue</span>
+            <span class="fuel-count">₹<?= number_format((float)($monthly_sales_summary['revenue'] ?? 0)) ?></span>
+          </div>
         </div>
       </div>
     </div>
